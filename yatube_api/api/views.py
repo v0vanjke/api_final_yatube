@@ -1,18 +1,18 @@
+from django.shortcuts import get_object_or_404
 from rest_framework import filters, mixins, viewsets
-from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.permissions import IsAuthenticated
 
-from api.permissions import IsAuthorOrReadOnlyPermission
+from api.permissions import AuthenticatedIsAuthorOrReadOnlyPermission
 from api.serializers import (CommentSerializer, FollowSerializer,
                              GroupSerializer, PostSerializer)
-from posts.models import Comment, Group, Post, User
+from posts.models import Group, Post, User
 
 
 class PostViewSet(viewsets.ModelViewSet):
     queryset = Post.objects.all()
     serializer_class = PostSerializer
-    permission_classes = (IsAuthorOrReadOnlyPermission,)
+    permission_classes = (AuthenticatedIsAuthorOrReadOnlyPermission,)
     pagination_class = LimitOffsetPagination
 
     def perform_create(self, serializer):
@@ -21,17 +21,18 @@ class PostViewSet(viewsets.ModelViewSet):
 
 class CommentViewSet(viewsets.ModelViewSet):
     serializer_class = CommentSerializer
-    permission_classes = (IsAuthorOrReadOnlyPermission,)
+    permission_classes = (AuthenticatedIsAuthorOrReadOnlyPermission,)
 
     def perform_create(self, serializer):
+        post = get_object_or_404(Post, pk=self.kwargs['id'])
         serializer.save(
-            post_id=self.kwargs.get('id'),
-            author=self.request.user,
+            post=post,
+            author=self.request.user
         )
 
     def get_queryset(self):
-        comment_queryset = Comment.objects.filter(post=self.kwargs.get('id'))
-        return comment_queryset
+        post = get_object_or_404(Post, pk=self.kwargs['id'])
+        return post.comments.all()
 
 
 class GroupViewSet(viewsets.ReadOnlyModelViewSet):
@@ -58,12 +59,10 @@ class FollowViewSet(CreateRetrieveListMixin):
 
     def perform_create(self, serializer):
         """Validate situation when User = Follower."""
-        following = User.objects.get(
-            username=self.request.data.get('following')
+        following = get_object_or_404(
+            User, username=self.request.data.get('following')
         )
         user = self.request.user
-        if user == following:
-            raise ValidationError('Нельзя подписываться самому на себя!')
         serializer.save(user=user, following=following)
 
     def get_queryset(self):
